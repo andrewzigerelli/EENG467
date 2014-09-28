@@ -1,4 +1,7 @@
 #include "replacement_state.h"
+#include <vector>
+
+using namespace std;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,6 +68,8 @@ void CACHE_REPLACEMENT_STATE::InitReplacementState()
         {
             // initialize stack position (for true LRU)
             repl[ setIndex ][ way ].LRUstackposition = way;
+            // initialize number of accesses to 0
+            repl[setIndex][way].accesses = 0;
         }
     }
 
@@ -102,6 +107,7 @@ INT32 CACHE_REPLACEMENT_STATE::GetVictimInSet( UINT32 tid, UINT32 setIndex, cons
     else if( replPolicy == CRC_REPL_CONTESTANT )
     {
         // Contestants:  ADD YOUR VICTIM SELECTION FUNCTION HERE
+        return Get_MyRepl_Victim(setIndex);
     }
 
     // We should never get here
@@ -138,6 +144,7 @@ void CACHE_REPLACEMENT_STATE::UpdateReplacementState(
         // Contestants:  ADD YOUR UPDATE REPLACEMENT STATE FUNCTION HERE
         // Feel free to use any of the input parameters to make
         // updates to your replacement policy
+        UpdateMyRepl(setIndex, updateWayID);
     }
     
     
@@ -192,6 +199,47 @@ INT32 CACHE_REPLACEMENT_STATE::Get_Random_Victim( UINT32 setIndex )
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
+// This function finds the top most used lines and removes them from a        //
+// pool of valid ways.  The remaining ways are scanned for the highest        //
+// LRU value, which will be the one replaced.                                 //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
+INT32 CACHE_REPLACEMENT_STATE::Get_MyRepl_Victim(UINT32 setIndex)
+{
+  // Get pointer to replacement state of current set
+  LINE_REPLACEMENT_STATE *replSet = repl[setIndex];
+
+  INT32 lruWay = 0;
+
+  // Container of all the valid ways
+  vector<UINT32> validWays;
+
+  // Populate array for all way indices
+  for (UINT32 way = 0; way < assoc; ++way)
+    validWays.push_back(way);
+
+  for (size_t j = 0; j < validWays.size(); ++j){
+    if (replSet[validWays[j]].accesses > 0) {
+      validWays.erase(validWays.begin()+j);
+    }
+  }
+
+  // Find LRU in remaining valid indices
+  UINT32 currStackPos = 0;
+  for (size_t i = 0; i < validWays.size(); ++i) {
+    if (replSet[validWays[i]].LRUstackposition > currStackPos) {
+      currStackPos = replSet[validWays[i]].LRUstackposition;
+      lruWay = validWays[i];
+    }
+  }
+
+  // Reset the number of accesses in the replaced line
+  replSet[lruWay].accesses = 0;
+  return lruWay;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
 // This function implements the LRU update routine for the traditional        //
 // LRU replacement policy. The arguments to the function are the physical     //
 // way and set index.                                                         //
@@ -215,6 +263,40 @@ void CACHE_REPLACEMENT_STATE::UpdateLRU( UINT32 setIndex, INT32 updateWayID )
     // Set the LRU stack position of new line to be zero
     repl[ setIndex ][ updateWayID ].LRUstackposition = 0;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+// This function implements the Protected LRU update routine.  In this        //
+// function, the access counter is incremented and checked against the        //
+// max value.  If the counter has saturated, all the counters are right       //
+// shifted by 1.  After which, normal LRU update takes place.                 //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
+void CACHE_REPLACEMENT_STATE::UpdateMyRepl(UINT32 setIndex, INT32 updateWayID)
+{
+  // Get pointer to replacement state of current set
+  LINE_REPLACEMENT_STATE *replSet = repl[setIndex];
+
+  // Increment the number of accesses
+  replSet[updateWayID].accesses++;
+
+  // Test accesses against the threshold
+  if (replSet[updateWayID].accesses == MAX_COUNTER_VAL){
+    for (UINT32 way = 0; way < assoc; ++way)
+      replSet[way].accesses = replSet[way].accesses >> 1;
+  }
+  else{
+    for (UINT32 way = 0; way < assoc; ++way){
+      if(((rand()%1000)/10) <= DECAY_PROBABILITY){
+        replSet[way].accesses = replSet[way].accesses-1;
+      }
+    }
+  }
+
+  // Update LRU stack
+  UpdateLRU(setIndex, updateWayID);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //

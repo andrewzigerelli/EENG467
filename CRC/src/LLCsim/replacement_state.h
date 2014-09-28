@@ -21,6 +21,11 @@
 #include "utils.h"
 #include "crc_cache_defs.h"
 
+// Constant values
+#define NUM_MU 10         // Number of protected MU lines per set
+#define MAX_COUNTER_VAL 8 // Maximum value of the access counter
+#define DECAY_PROBABILITY 3
+
 // Replacement Policies Supported
 typedef enum 
 {
@@ -35,7 +40,7 @@ typedef struct
     UINT32  LRUstackposition;
 
     // CONTESTANTS: Add extra state per cache line here
-
+    COUNTER accesses;   // only uses log_2 MAX_COUNTER_VAL bits
 } LINE_REPLACEMENT_STATE;
 
 
@@ -77,6 +82,9 @@ class CACHE_REPLACEMENT_STATE
 
     INT32  Get_LRU_Victim( UINT32 setIndex );
     void   UpdateLRU( UINT32 setIndex, INT32 updateWayID );
+
+    INT32  Get_MyRepl_Victim(UINT32 setIndex);
+    void   UpdateMyRepl(UINT32 setIndex, INT32 updateWayID);
 };
 
 
